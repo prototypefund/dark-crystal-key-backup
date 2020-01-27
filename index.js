@@ -1,5 +1,5 @@
 const secrets = require('secret-sharing')
-const s = require('.')
+const s = require('key-backup-crypto')
 
 const version = '1.0.0'
 const log = console.log
@@ -7,7 +7,7 @@ const log = console.log
 module.exports = (options) => new Member(options)
 
 class Member {
-  constructor (options) {
+  constructor (options = {}) {
     this.keypair = options.keypair || s.signingKeypair()
     // encryptionkeypair
     this.encryptionKeypair = s.signingKeypairToEncryptionKeypair(this.keypair)
@@ -50,16 +50,14 @@ class Member {
     return boxedShardMessages.concat([boxedRootMessage])
   }
 
-  combine(shardsHex) {
+  combine (shardsHex) {
     const shards = shardsHex.map(s => Buffer.from(s, 'hex'))
   }
-
 }
 
-function shardMessagesToShards(shardMessages) {
+function shardMessagesToShards (shardMessages) {
   return shardMessages.filter(s => s.shard).map(s => s.shard)
 }
-
 
 function encode (object) {
   // TODO protobuf
@@ -69,23 +67,3 @@ function encode (object) {
 function buildMessage (type, properties) {
   return Object.assign({ type: `dark-crystal/${type}`, version }, properties)
 }
-
-const custodians = []
-for (let i = 0; i < 5; i++) {
-  custodians.push(s.encryptionKeypair().publicKey)
-}
-
-const sObj = {
-  secret: s.randomBytes(32),
-  label: 'My private key',
-  shards: 5,
-  quorum: 3,
-  signingKeypair: s.signingKeypair(),
-  custodians
-}
-
-share(sObj).then((boxedMessages) => {
-  console.log(boxedMessages.length)
-}).catch((err) => {
-  console.log(err)
-})
