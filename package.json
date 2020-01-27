@@ -30,6 +30,11 @@
   "homepage": "https://gitlab.com/dark-crystal/key-backup#readme",
   "devDependencies": {
     "tap-spec": "^5.0.0",
-    "tape": "^4.13.0"
+    "tape": "^4.13.0",
+    "tape-plus": "^1.0.0"
+  },
+  "dependencies": {
+    "key-backup-crypto": "git+https://gitlab.com/dark-crystal/key-backup-crypto.git",
+    "secret-sharing": "git+https://gitlab.com/dark-crystal/secret-sharing.git"
   }
 }
