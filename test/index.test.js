@@ -1,5 +1,5 @@
 const { describe } = require('tape-plus')
-const { share } = require('..')
+const keyBackup = require('..')
 const s = require('key-backup-crypto')
 
 const custodians = []
@@ -18,10 +18,14 @@ const sObj = {
 
 describe('share', (context) => {
   context('basic', (assert, next) => {
-    share(sObj).then((boxedMessages) => {
+    const member = keyBackup()
+    assert.ok(member.keypair, 'has keypair')
+    member.share(sObj).then((boxedMessages) => {
       console.log(boxedMessages.length)
+      next()
     }).catch((err) => {
       console.log(err)
+      next()
     })
   })
 })
