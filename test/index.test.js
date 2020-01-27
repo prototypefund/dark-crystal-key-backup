@@ -21,7 +21,7 @@ describe('share', (context) => {
     const member = keyBackup()
     assert.ok(member.keypair, 'has keypair')
     member.share(sObj).then((boxedMessages) => {
-      console.log(boxedMessages.length)
+      assert.equal(boxedMessages.length, 6, 'Gives expected number of messages')
       next()
     }).catch((err) => {
       console.log(err)
