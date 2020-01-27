@@ -34,6 +34,7 @@
     "tape-plus": "^1.0.0"
   },
   "dependencies": {
+    "debug": "^4.1.1",
     "key-backup-crypto": "git+https://gitlab.com/dark-crystal/key-backup-crypto.git",
     "secret-sharing": "git+https://gitlab.com/dark-crystal/secret-sharing.git"
   }
