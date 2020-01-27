@@ -1,8 +1,8 @@
 const secrets = require('secret-sharing')
 const s = require('key-backup-crypto')
+const log = require('debug')('key-backup')
 
 const version = '1.0.0'
-const log = console.log
 
 module.exports = (options) => new Member(options)
 
@@ -14,14 +14,14 @@ class Member {
   }
 
   async share (options) {
-    const { secret, label, shards, quorum, signingKeypair, custodians } = options
+    const { secret, label, shards, quorum, custodians } = options
 
     const packedSecret = s.packLabel(secret, label)
 
     // TODO convert public keys of custodians to encryption keys
 
     const rawShards = await secrets.share(packedSecret, shards, quorum)
-    const signedShards = s.signShards(rawShards, signingKeypair)
+    const signedShards = s.signShards(rawShards, this.keypair)
 
     const boxedShards = signedShards.map((shard, i) => {
       return s.oneWayBox(shard, custodians[i])
@@ -41,12 +41,11 @@ class Member {
     log(rootMessage)
     log(JSON.stringify(shardMessages, null, 4))
 
-    const encryptionKeypair = s.signingKeypairToEncryptionKeypair(signingKeypair)
     const boxedShardMessages = shardMessages.map((shardMessage, i) => {
-      return s.box(encode(shardMessage), custodians[i], encryptionKeypair.secretKey)
+      return s.box(encode(shardMessage), custodians[i], this.encryptionKeypair.secretKey)
     })
 
-    const boxedRootMessage = s.oneWayBox(encode(rootMessage), encryptionKeypair.publicKey)
+    const boxedRootMessage = s.oneWayBox(encode(rootMessage), this.encryptionKeypair.publicKey)
     return boxedShardMessages.concat([boxedRootMessage])
   }
 
