@@ -36,6 +36,8 @@
   "dependencies": {
     "debug": "^4.1.1",
     "key-backup-crypto": "git+https://gitlab.com/dark-crystal/key-backup-crypto.git",
+    "key-backup-message-schemas": "git+https://gitlab.com/dark-crystal/key-backup-message-schemas.git",
+    "pull-stream": "^3.6.14",
     "secret-sharing": "git+https://gitlab.com/dark-crystal/secret-sharing.git"
   }
 }
