@@ -16,7 +16,7 @@ class Member {
     this.publish = options.publish // ||
     this.query = options.query // ||
     this.encoder = options.encoder || jsonEncoder
-    this.messageToId = options.messageToId || defaultMessageToId
+    this.messageToId = options.messageToId || this._defaultMessageToId
   }
 
   async share (options) {
@@ -142,7 +142,7 @@ class Member {
     return pull(
       this.messagesByType('shard'),
       pull.filter(schemas.isShard)
-      // pull.filter(this.isMine) // TODO
+      // pull.filter(self.isMine) // TODO
     )
   }
 
@@ -172,6 +172,7 @@ class Member {
           recipient,
           root
         })
+        if (!schemas.isRequest(reqMessage)) return callback(new Error('Request message badly formed'))
         return self.encodeAndBox(reqMessage, Buffer.from(recipient, 'hex'))
       }),
       pull.collect((err, messagesToPublish) => {
@@ -212,6 +213,7 @@ class Member {
             root: request.root,
             shard: shard.toString('hex')
           })
+          if (!schemas.isReply(reply)) return callback(new Error('Reply message badly formed'))
           cb(null, self.encodeAndBox(reply, Buffer.from(request.author, 'hex')))
         })
       }),
@@ -238,16 +240,18 @@ class Member {
       })
     )
   }
+
+  _defaultMessageToId (message) {
+    return s.genericHash(this.encoder.encode(message)).toString('hex')
+  }
 }
 
 const jsonEncoder = {
   encode (object) {
-    // TODO protobuf
     return Buffer.from(JSON.stringify(object))
   },
 
   decode (buffer) {
-    // if (typeof buffer === 'object') return buffer
     let object
     try {
       object = JSON.parse(buffer.toString())
@@ -256,8 +260,4 @@ const jsonEncoder = {
     }
     return object
   }
-}
-
-function defaultMessageToId (message) {
-  return s.genericHash(this.encoder.encode(message)).toString('hex')
 }
