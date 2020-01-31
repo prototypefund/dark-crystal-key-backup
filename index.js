@@ -2,6 +2,8 @@ const secrets = require('secret-sharing')
 const s = require('key-backup-crypto')
 const log = require('debug')('key-backup')
 const pull = require('pull-stream')
+const schemas = require('key-backup-message-schemas')
+const assert = require('assert')
 
 const version = '1.0.0'
 
@@ -9,10 +11,8 @@ module.exports = (options) => new Member(options)
 
 class Member {
   constructor (options = {}) {
-    this.keypair = options.keypair || s.signingKeypair()
+    this.keypair = options.keypair || s.keypair()
     this.id = this.keypair.publicKey.toString('hex')
-    // encryptionkeypair
-    this.encryptionKeypair = s.signingKeypairToEncryptionKeypair(this.keypair)
     this.publish = options.publish // ||
     this.query = options.query // ||
     this.encoder = options.encoder || jsonEncoder
@@ -20,11 +20,9 @@ class Member {
   }
 
   async share (options) {
-    const { secret, label, shards, quorum, custodians } = options
+    const { secret, label, shards, quorum, custodians, name } = options
 
     const packedSecret = s.packLabel(secret, label)
-
-    // TODO convert public keys of custodians to encryption keys
 
     const rawShards = await secrets.share(packedSecret, shards, quorum)
     const signedShards = s.signShards(rawShards, this.keypair)
@@ -34,14 +32,19 @@ class Member {
     })
 
     const rootMessage = this._buildMessage('root', { label, shards, quorum, tool: 'sss' })
+    assert(schemas.isRoot(rootMessage), schemas.errorParser(schemas.isRoot))
+    const root = this.messageToId(rootMessage)
     const shardMessages = boxedShards.map((shard, i) => {
       return this._buildMessage('shard', {
-        root: 'TODO',
+        root,
+        name,
         shard: shard.toString('hex'),
         recipient: custodians[i].toString('hex')
       })
     })
-
+    shardMessages.forEach((s) => {
+      assert(schemas.isShard(s))
+    })
     // TODO check isRootMessage, isShardMessage
 
     log(rootMessage)
@@ -51,15 +54,59 @@ class Member {
       return this.encodeAndBox(shardMessage, custodians[i])
     })
 
-    const boxedRootMessage = s.oneWayBox(this.encoder.encode(rootMessage), this.encryptionKeypair.publicKey)
+    // const boxedRootMessage = s.oneWayBox(this.encoder.encode(rootMessage), this.encryptionKeypair.publicKey)
+    const boxedRootMessage = this.encodeAndBox(rootMessage, this.keypair.publicKey)
 
     // Publish all messages at once
-    boxedShardMessages.concat([boxedRootMessage]).forEach(this.publish)
+    this._bulkPublish(boxedShardMessages.concat([boxedRootMessage]))
+    return root
   }
 
-  encodeAndBox(message, recipient) {
-    return s.box(this.encoder.encode(message), recipient, this.encryptionKeypair.secretKey)
+  combine (root, callback) {
+    const self = this
+    pull(
+      self.messagesByType('reply'), // or 'forward'
+      // pull.filter(isReply),
+      pull.filter(relpy => relpy.root === root),
+      pull.map(reply => {
+        const signedShard = Buffer.from(reply.shard, 'hex')
+        // TODO for forwards, we need to know the public key of the secret owner
+        const shard = s.openShard(signedShard, this.keypair.publicKey)
+        if (!shard) log(`Warning: Shard from ${reply.author} could not be verified`) // TODO
+        return shard
+      }),
+      pull.filter(Boolean),
+      pull.collect((err, shards) => {
+        if (err) return callback(err)
+        if (!shards.length) return callback(new Error('No shards'))
+        secrets.combine(shards).then((packedSecret) => {
+          let secretObject
+          try {
+            secretObject = s.unpackLabel(packedSecret)
+          } catch (err) {
+            return callback(err)
+          }
+          callback(null, secretObject)
+        }).catch(callback)
+      })
+    )
   }
+
+  _bulkPublish (messages) {
+    const self = this
+    messages.forEach((message) => { self.publish({ message, publicKey: self.keypair.publicKey }) })
+  }
+
+  encodeAndBox (message, recipient) {
+    return s.privateBox(this.encoder.encode(message), [recipient, this.keypair.publicKey])
+  }
+
+  decodeAndUnbox (message) {
+    assert(Buffer.isBuffer(message), 'message must be a buffer')
+    const plainText = s.privateUnbox(message, this.keypair.secretKey)
+    return this.encoder.decode(plainText || message)
+  }
+
   _buildMessage (type, properties) {
     return Object.assign({
       author: this.keypair.publicKey.toString('hex'),
@@ -69,35 +116,24 @@ class Member {
     }, properties)
   }
 
-  buildIndex () {
-    pull(
-      this.query(),
-      pull.map(this.receiveMessage),
-      pull.collect((err) => {
-        if (err) throw err // TODO
-      })
-    )
-  }
-
-  decryptMessage (message, senderPublicKey) {
-    const plainText = s.unbox(message, senderPublicKey, this.encryptionSecretKey)
-    return this.encoder.decode(plainText || message)
-  }
-
   messagesByType (type) {
+    const self = this
     return pull(
       this.query(),
-      // pull.map(decode/unbox)
-      pull.filter(`dark-crystal/${type}`)
+      pull.map((messageObj) => {
+        const { message, publicKey } = messageObj
+        return self.decodeAndUnbox(message, publicKey)
+      }),
+      pull.filter(m => m.type === `dark-crystal/${type}`)
     )
   }
 
-  isMine(message) {
+  isMine (message) {
     return message.author === this.id
   }
 
   queryOwnSecrets () {
-    pull(
+    return pull(
       this.messagesByType('root'),
       // pull.filter(isRoot),
       pull.filter(this.isMine)
@@ -105,54 +141,64 @@ class Member {
   }
 
   ownShards () {
-    pull(
-      this.messagesByType('shard'),
+    return pull(
+      this.messagesByType('shard')
       // pull.filter(isShard),
-      pull.filter(this.isMine)
+      // pull.filter(this.isMine)
     )
   }
 
-  combine (shardsHex) {
-    const shards = shardsHex.map(s => Buffer.from(s, 'hex'))
-  }
+  // gatherAllShards (callback) {
+  //   const self = this
+  //   pull(
+  //     self.messagesByType('root'),
+  //     //pull.filter(isRoot),
+  //     pull.filter(self.isMine),
+  //     pull.asyncMap((err, ))
+  //   )
+  // }
 
-  request (rootId, singleRecipient) {
+
+  request (root, singleRecipient, callback) {
     // if a recipeint is given, only publish a request to that recipient.
     // otherwise, publish requests to all recipients
     // find all own shards for this rootId
+    const self = this
     pull(
       this.ownShards(),
-      pull.filter(s => s.rootId === rootId),
+      pull.filter(s => s.root === root),
       pull.map(s => s.recipient),
       pull.filter(r => singleRecipient ? r === singleRecipient : true),
       // pull.asyncMap()
       pull.map((recipient) => {
         const reqMessage = this._buildMessage('request', {
           recipient,
-          rootId
+          root
         })
-        return this.encodeAndBox(reqMessage, recipient)
+        return self.encodeAndBox(reqMessage, Buffer.from(recipient, 'hex'))
       }),
       pull.collect((err, messagesToPublish) => {
-        if (err) throw (err) // TODO
-        messagesToPublish.forEach(this.publish) // await
+        if (err) return callback(err)
+        self._bulkPublish(messagesToPublish)
+        callback(null, messagesToPublish.length)
       })
     )
   }
 
-  reply () {
+  reply (callback) {
     // find all requests TO me
     // find all replies FROM me for those request messages
+    const self = this
     pull(
-      this.messagesByType('request'),
+      self.messagesByType('request'),
       // pull.filter(isRequest),
-      pull.filter(!this.isMine),
+      pull.filter(!self.isMine),
       pull.asyncMap((request, callback) => { // TODO asyncmap
         pull(
-          this.messagesByType('reply'),
+          self.messagesByType('reply'),
           // pull.filter(isReply),
-          pull.filter(this.isMine),
-          pull.filter(reply => reply.branch === this.messageToId(request)),
+          pull.filter(self.isMine),
+          pull.filter(reply => reply.branch === self.messageToId(request)),
           pull.collect((err, replies) => {
             if (err) return callback(err)
             callback(null, replies.length ? false : request)
@@ -160,31 +206,33 @@ class Member {
         )
       }),
       pull.filter(Boolean),
-      pull.asyncMap((request, callback) => {
-        this._getShard(request.rootId, (err, shard) => {
+      pull.asyncMap((request, cb) => {
+        self._getShard(request.root, (err, shard) => {
           if (err) return callback(err)
-          const reply = this._buildMessage('reply', {
+          const reply = self._buildMessage('reply', {
             recipient: request.author,
-            branch: this.messageToId(request),
-            root: request.rootId,
-            shard
+            branch: self.messageToId(request),
+            root: request.root,
+            shard: shard.toString('hex')
           })
-          callback(null, this.encodeAndBox(reply, request.author))
+          cb(null, self.encodeAndBox(reply, Buffer.from(request.author, 'hex')))
         })
       }),
       pull.collect((err, messagesToPublish) => {
-        if (err) throw (err) // TODO
-        messagesToPublish.forEach(this.publish) // await
+        if (err) return callback(err)
+        self._bulkPublish(messagesToPublish)
+        callback(null, messagesToPublish.length)
       })
     )
   }
 
-  _getShard (rootId, cb) {
+  _getShard (root, cb) {
+    const self = this
     pull(
-      this.messagesByType('shard'),
+      self.messagesByType('shard'),
       // pull.filter('isShard')
-      pull.filter(s => s.rootId === rootId),
-      pull.map(s => s.oneWayUnbox(Buffer.from(s.shard, 'hex'), this.encryptionKeypair.secretKey)),
+      pull.filter(s => s.root === root),
+      pull.map(shardMsg => s.oneWayUnbox(Buffer.from(shardMsg.shard, 'hex'), self.keypair.secretKey)),
       pull.collect((err, shards) => {
         if (err) return cb(err)
         if (!shards[0]) return cb(new Error('Shard not found, or decryption error'))
@@ -193,11 +241,6 @@ class Member {
       })
     )
   }
-
-}
-
-function shardMessagesToShards (shardMessages) {
-  return shardMessages.filter(s => s.shard).map(s => s.shard)
 }
 
 const jsonEncoder = {
@@ -207,7 +250,7 @@ const jsonEncoder = {
   },
 
   decode (buffer) {
-    if (typeof buffer === 'object') return buffer
+    // if (typeof buffer === 'object') return buffer
     let object
     try {
       object = JSON.parse(buffer.toString())
