@@ -133,16 +133,16 @@ class Member {
   queryOwnSecrets () {
     return pull(
       this.messagesByType('root'),
-      // pull.filter(isRoot),
+      pull.filter(schemas.isRoot),
       pull.filter(this.isMine)
     )
   }
 
   ownShards () {
     return pull(
-      this.messagesByType('shard')
-      // pull.filter(isShard),
-      // pull.filter(this.isMine)
+      this.messagesByType('shard'),
+      pull.filter(schemas.isShard)
+      // pull.filter(this.isMine) // TODO
     )
   }
 
@@ -155,7 +155,6 @@ class Member {
   //     pull.asyncMap((err, ))
   //   )
   // }
-
 
   request (root, singleRecipient, callback) {
     // if a recipeint is given, only publish a request to that recipient.
@@ -189,7 +188,7 @@ class Member {
     const self = this
     pull(
       self.messagesByType('request'),
-      // pull.filter(isRequest),
+      pull.filter(schemas.isRequest),
       pull.filter(!self.isMine),
       pull.asyncMap((request, callback) => { // TODO asyncmap
         pull(
@@ -228,7 +227,7 @@ class Member {
     const self = this
     pull(
       self.messagesByType('shard'),
-      // pull.filter('isShard')
+      pull.filter(schemas.isShard),
       pull.filter(s => s.root === root),
       pull.map(shardMsg => s.oneWayUnbox(Buffer.from(shardMsg.shard, 'hex'), self.keypair.secretKey)),
       pull.collect((err, shards) => {
