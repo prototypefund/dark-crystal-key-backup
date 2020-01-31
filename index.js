@@ -45,7 +45,6 @@ class Member {
     shardMessages.forEach((s) => {
       assert(schemas.isShard(s))
     })
-    // TODO check isRootMessage, isShardMessage
 
     log(rootMessage)
     log(JSON.stringify(shardMessages, null, 4))
@@ -54,7 +53,6 @@ class Member {
       return this.encodeAndBox(shardMessage, custodians[i])
     })
 
-    // const boxedRootMessage = s.oneWayBox(this.encoder.encode(rootMessage), this.encryptionKeypair.publicKey)
     const boxedRootMessage = this.encodeAndBox(rootMessage, this.keypair.publicKey)
 
     // Publish all messages at once
@@ -66,7 +64,7 @@ class Member {
     const self = this
     pull(
       self.messagesByType('reply'), // or 'forward'
-      // pull.filter(isReply),
+      pull.filter(schemas.isReply),
       pull.filter(relpy => relpy.root === root),
       pull.map(reply => {
         const signedShard = Buffer.from(reply.shard, 'hex')
