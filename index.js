@@ -83,6 +83,10 @@ class Member {
           const signedShard = Buffer.from(reply.shard, 'hex')
           // TODO for forwards, we need to know the public key of the secret owner
           const shard = s.openShard(signedShard, self.keypair.publicKey)
+
+          // TODO check if shard is ephemeral encrypted
+          // if it is, find the key for that shard and decrypt
+
           if (!shard) log(`Warning: Shard from ${reply.author} could not be verified`) // TODO
           return shard
         }),
@@ -170,6 +174,8 @@ class Member {
         pull.asyncMap((request, cb) => {
           self.getShard(request.root, (err, shard) => {
             if (err) return callback(err)
+            // TODO ephemeral key in request?
+            // shardToPubish = request.ephemeralKey ? encrypt : shard
             const reply = self._buildMessage('reply', {
               recipient: request.author,
               branch: self.messageToId(request),
@@ -185,6 +191,28 @@ class Member {
           self._bulkPublish(messagesToPublish, callback)
         })
       )
+    }
+  }
+
+  forward (root, recipient, callback) {
+    const self = this
+    return callback
+      ? forwardCB(root, recipient, callback)
+      : util.promisify(forwardCB)(root, recipient)
+
+    function forwardCB (root, recipient, callback) {
+      if (Buffer.isBuffer(recipient)) recipient = recipient.toString('hex')
+      self.getShard(root, (err, shard) => {
+        if (err) return callback(err)
+        const forwardMsg = self._buildMessage('forward', {
+          root,
+          shard: shard.toString('hex'),
+          recipient
+        })
+        if (!schemas.isForward(forwardMsg)) return callback(new Error('forward message badly formed'))
+
+        self._bulkPublish(self.encodeAndBox(forwardMsg, Buffer.from(recipient, 'hex')), callback)
+      })
     }
   }
 
