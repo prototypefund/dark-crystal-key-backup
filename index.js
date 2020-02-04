@@ -16,6 +16,7 @@ class Member {
     this.keypair = options.keypair || s.keypair()
     this.id = this.keypair.publicKey.toString('hex')
     this.publish = options.publish // ||
+    this.publishCB = options.publishCB
     this.query = options.query // ||
     this.encoder = options.encoder || jsonEncoder
     this.messageToId = options.messageToId || this._defaultMessageToId
@@ -62,7 +63,7 @@ class Member {
       const boxedRootMessage = self.encodeAndBox(rootMessage, self.keypair.publicKey)
 
       // Publish all messages at once
-      self._bulkPublish(boxedShardMessages.concat([boxedRootMessage]))
+      await self._bulkPublish(boxedShardMessages.concat([boxedRootMessage]))
       return root
     }
   }
@@ -133,8 +134,7 @@ class Member {
         }),
         pull.collect((err, messagesToPublish) => {
           if (err) return callback(err)
-          self._bulkPublish(messagesToPublish)
-          callback(null, messagesToPublish.length)
+          self._bulkPublish(messagesToPublish, callback)
         })
       )
     }
@@ -182,8 +182,7 @@ class Member {
         }),
         pull.collect((err, messagesToPublish) => {
           if (err) return callback(err)
-          self._bulkPublish(messagesToPublish)
-          callback(null, messagesToPublish.length)
+          self._bulkPublish(messagesToPublish, callback)
         })
       )
     }
@@ -232,9 +231,30 @@ class Member {
     }, properties)
   }
 
-  _bulkPublish (messages) {
+  _bulkPublish (messages, callback) {
     const self = this
-    messages.forEach((message) => { self.publish(message) })
+    return callback
+      ? bulkPublishCB(messages, callback)
+      : util.promisify(bulkPublishCB)(messages)
+
+    function bulkPublishCB (messages, callback) {
+      if (self.publish && !self.publishCB) {
+        self.publishCB = function (message, cb) {
+          self.publish(message).then(() => cb()).catch(cb)
+        }
+      }
+
+      if (typeof messages === 'string') messages = [messages]
+
+      pull(
+        pull.values(messages),
+        pull.asyncMap(self.publish),
+        pull.collect((err) => {
+          if (err) return callback(err)
+          callback(null, messages.length)
+        })
+      )
+    }
   }
 
   encodeAndBox (message, recipient) {

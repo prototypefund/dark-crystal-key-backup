@@ -5,8 +5,13 @@ const pull = require('pull-stream')
 
 describe('share', (context) => {
   let messages
-  function publish (message) {
+  function publish (message, callback) {
     messages.push(message)
+    callback()
+    // return new Promise(function (resolve, reject) {
+    //   messages.push(message)
+    //   resolve()
+    // })
   }
 
   function query () {
