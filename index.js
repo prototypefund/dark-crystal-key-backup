@@ -215,9 +215,9 @@ class Member {
     const self = this
     return pull(
       this.query(),
-      pull.map((messageObj) => {
-        const { message, publicKey } = messageObj
-        return self.decodeAndUnbox(message, publicKey)
+      pull.map((message) => {
+        // const { message, publicKey } = messageObj
+        return self.decodeAndUnbox(message)
       }),
       pull.filter(m => m.type === `dark-crystal/${type}`)
     )
@@ -234,7 +234,7 @@ class Member {
 
   _bulkPublish (messages) {
     const self = this
-    messages.forEach((message) => { self.publish({ message, publicKey: self.keypair.publicKey }) })
+    messages.forEach((message) => { self.publish(message) })
   }
 
   encodeAndBox (message, recipient) {
