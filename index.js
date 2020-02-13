@@ -103,7 +103,11 @@ class Member {
           // TODO check if shard is ephemeral encrypted
           // if it is, find the key for that shard and decrypt
 
-          if (!shard) log(`Warning: Shard from ${msg.author} could not be verified`)
+          if (!shard) {
+            log(`Warning: Shard from ${msg.author} could not be verified`)
+            shard = s.removeSignature(signedShard)
+          }
+
           // TODO removeSignature
           return shard
         }),
