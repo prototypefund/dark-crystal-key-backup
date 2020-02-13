@@ -76,7 +76,7 @@ class Member {
 
     function combineCB (root, callback) {
       pull(
-        self.messagesByType('reply'), // or 'forward'
+        self.messagesByType(['reply', 'forward']),
         pull.filter(schemas.isReply),
         pull.filter(relpy => relpy.root === root),
         pull.map(reply => {
@@ -238,15 +238,18 @@ class Member {
     }
   }
 
-  messagesByType (type) {
+  messagesByType (types) {
     const self = this
+    if (typeof types === 'string') types = [types]
+    const fullTypes = types.map(type => `dark-crystal/${type}`)
+
     return pull(
       this.query(),
       pull.map((message) => {
         // const { message, publicKey } = messageObj
         return self.decodeAndUnbox(message)
       }),
-      pull.filter(m => m.type === `dark-crystal/${type}`)
+      pull.filter(m => fullTypes.includes(m.type))
     )
   }
 
