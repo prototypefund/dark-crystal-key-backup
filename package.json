@@ -34,6 +34,7 @@
     "tape-plus": "^1.0.0"
   },
   "dependencies": {
+    "call-me-maybe": "^1.0.1",
     "debug": "^4.1.1",
     "key-backup-crypto": "git+https://gitlab.com/dark-crystal/key-backup-crypto.git",
     "key-backup-message-schemas": "git+https://gitlab.com/dark-crystal/key-backup-message-schemas.git",
