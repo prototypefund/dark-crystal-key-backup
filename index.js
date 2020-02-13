@@ -211,7 +211,7 @@ class Member {
         })
         if (!schemas.isForward(forwardMsg)) return callback(new Error('forward message badly formed'))
 
-        self._bulkPublish(self.encodeAndBox(forwardMsg, Buffer.from(recipient, 'hex')), callback)
+        self._bulkPublish([self.encodeAndBox(forwardMsg, Buffer.from(recipient, 'hex'))], callback)
       })
     }
   }
