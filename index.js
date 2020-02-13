@@ -269,7 +269,6 @@ class Member {
     return pull(
       this.query(),
       pull.map((message) => {
-        // const { message, publicKey } = messageObj
         return self.decodeAndUnbox(message)
       }),
       pull.filter(m => fullTypes.includes(m.type))
@@ -322,9 +321,11 @@ class Member {
   }
 
   isMine (message) {
+    // TODO
     return message.author === this.id
   }
 
+  // Currently unused
   queryOwnSecrets () {
     return pull(
       this.messagesByType('root'),
@@ -334,10 +335,12 @@ class Member {
   }
 
   ownShards () {
+    const self = this
     return pull(
       this.messagesByType('shard'),
-      pull.filter(schemas.isShard)
-      // pull.filter(self.isMine) // TODO
+      pull.filter(schemas.isShard),
+      // pull.filter(this.isMine) // TODO
+      pull.filter(message => message.author === self.id)
     )
   }
 
