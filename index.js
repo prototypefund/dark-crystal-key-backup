@@ -105,6 +105,8 @@ class Member {
 
           if (!shard) {
             log(`Warning: Shard from ${msg.author} could not be verified`)
+            // TODO we should only attempt to use this shard if we cannot
+            // meet the quorum otherwise
             shard = s.removeSignature(signedShard)
           }
 
