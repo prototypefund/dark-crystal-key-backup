@@ -124,7 +124,7 @@ describe('share', (context) => {
         }),
         pull.collect((err) => {
           assert.error(err, 'No error')
-          next()
+          combineForwards(root)
         })
       )
     }).catch((err) => {
@@ -132,26 +132,60 @@ describe('share', (context) => {
       next()
     })
 
-    function makeReplies (root) {
+    function combineForwards (root) {
+      newSecretOwner.combine(root, secretOwner.id, (err, secretObj) => {
+        assert.error(err, 'No error on combine')
+        assert.equal(secretObj.label, sObj.label, 'Label correctly retrieved')
+        assert.equal(secretObj.secret.toString('hex'), sObj.secret.toString('hex'), 'Successfully recovered secret')
+        next()
+      })
+    }
+  })
+
+  context('with forwarding, without knowing secret owner id', (assert, next) => {
+    const custodians = []
+    const numMembers = 5
+    for (let i = 0; i < numMembers; i++) {
+      custodians.push(keyBackup({ publish, query }))
+    }
+    const secretOwner = keyBackup({ publish, query })
+    const newSecretOwner = keyBackup({ publish, query })
+    const sObj = {
+      secret: s.randomBytes(32),
+      label: 'My private key',
+      shards: 5,
+      quorum: 3,
+      custodians: custodians.map(c => c.keypair.publicKey)
+    }
+    secretOwner.share(sObj).then((root) => {
+      assert.ok(root, 'Gives root ID')
+
       pull(
         pull.values(custodians),
         pull.asyncMap((custodian, cb) => {
-          custodian.reply((err, numReplies) => {
-            assert.error(err, 'No error on reply')
-            assert.equal(numReplies, 1, 'Single reply published')
-            cb(null, numReplies)
+          custodian.forward(root, newSecretOwner.id, (err, published) => {
+            assert.error(err, 'No error on publish forward')
+            assert.equal(published, 1, 'Single message published')
+            cb()
           })
         }),
         pull.collect((err) => {
           assert.error(err, 'No error')
-          secretOwner.combine(root, (err, secretObj) => {
-            assert.error(err, 'No error on combine')
-            assert.equal(secretObj.label, sObj.label, 'Label correctly retrieved')
-            assert.equal(secretObj.secret.toString('hex'), sObj.secret.toString('hex'), 'Successfully recovered secret')
-            next()
-          })
+          combineForwards(root)
         })
       )
+    }).catch((err) => {
+      assert.error(err, 'No error on share')
+      next()
+    })
+
+    function combineForwards (root) {
+      newSecretOwner.combine(root, (err, secretObj) => {
+        assert.error(err, 'No error on combine')
+        assert.equal(secretObj.label, sObj.label, 'Label correctly retrieved')
+        assert.equal(secretObj.secret.toString('hex'), sObj.secret.toString('hex'), 'Successfully recovered secret')
+        next()
+      })
     }
   })
 })
