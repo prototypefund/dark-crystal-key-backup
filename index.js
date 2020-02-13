@@ -68,26 +68,43 @@ class Member {
     }
   }
 
-  combine (root, callback) {
+  combine (root, secretOwnerId, callback) {
+    if (typeof secretOwnerId === 'function' && !callback) {
+      callback = secretOwnerId
+      secretOwnerId = undefined
+    }
     const self = this
     return callback
-      ? combineCB(root, callback)
-      : util.promisify(combineCB)(root)
+      ? combineCB(root, secretOwnerId, callback)
+      : util.promisify(combineCB)(root, secretOwnerId)
 
-    function combineCB (root, callback) {
+    function combineCB (root, secretOwnerId, callback) {
       pull(
         self.messagesByType(['reply', 'forward']),
-        pull.filter(schemas.isReply),
-        pull.filter(relpy => relpy.root === root),
-        pull.map(reply => {
-          const signedShard = Buffer.from(reply.shard, 'hex')
-          // TODO for forwards, we need to know the public key of the secret owner
-          const shard = s.openShard(signedShard, self.keypair.publicKey)
+        pull.filter((msg) => {
+          return schemas.isReply(msg) || schemas.isForward(msg)
+        }),
+        pull.filter(msg => msg.root === root),
+        pull.map(msg => {
+          const signedShard = Buffer.from(msg.shard, 'hex')
+          const isReplyMsg = schemas.isReply(msg)
+          let shard
+          if (!isReplyMsg && !secretOwnerId) {
+            // we cannot verify because we do not know who it is from
+            shard = false
+          } else {
+            const secretOwnersKey = isReplyMsg
+              ? self.keypair.publicKey
+              : Buffer.from(secretOwnerId, 'hex')
+
+            shard = s.openShard(signedShard, secretOwnersKey)
+          }
 
           // TODO check if shard is ephemeral encrypted
           // if it is, find the key for that shard and decrypt
 
-          if (!shard) log(`Warning: Shard from ${reply.author} could not be verified`) // TODO
+          if (!shard) log(`Warning: Shard from ${msg.author} could not be verified`)
+          // TODO removeSignature
           return shard
         }),
         pull.filter(Boolean),
