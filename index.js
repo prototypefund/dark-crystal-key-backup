@@ -6,6 +6,9 @@ const schemas = require('key-backup-message-schemas')
 const assert = require('assert')
 const util = require('util')
 const maybe = require('call-me-maybe')
+const homeDir = require('os').homedir()
+const path = require('path')
+const EphemeralKeys = require('ephemeral-keys')
 
 const version = '1.0.0'
 
@@ -20,6 +23,14 @@ class Member {
     this.query = options.query // ||
     this.encoder = options.encoder || jsonEncoder
     this.messageToId = options.messageToId || this._defaultMessageToId
+    this.options = options
+
+    const ephemeralKeysOpts = {}
+    if (options.ephemeral) {
+      this.storage = options.storage || path.join(homeDir, '.key-backup')
+      ephemeralKeysOpts.dir = path.join(options.storage, 'ephemeral-keys')
+    }
+    this.ephemeralKeys = EphemeralKeys(ephemeralKeysOpts)
   }
 
   share (options, callback) {
@@ -85,33 +96,46 @@ class Member {
           return schemas.isReply(msg) || schemas.isForward(msg)
         }),
         pull.filter(msg => msg.root === root),
-        pull.map(msg => {
-          const signedShard = Buffer.from(msg.shard, 'hex')
-          const isReplyMsg = schemas.isReply(msg)
-          let shard
-          if (!isReplyMsg && !secretOwnerId) {
-            // we cannot verify because we do not know who it is from
-            shard = false
-          } else {
-            const secretOwnersKey = isReplyMsg
-              ? self.keypair.publicKey
-              : Buffer.from(secretOwnerId, 'hex')
-
-            shard = s.openShard(signedShard, secretOwnersKey)
-          }
+        pull.asyncMap((msg, cb) => {
+          const rawShard = Buffer.from(msg.shard, 'hex')
 
           // TODO check if shard is ephemeral encrypted
           // if it is, find the key for that shard and decrypt
-
-          if (!shard) {
-            log(`Warning: Shard from ${msg.author} could not be verified`)
-            // TODO we should only attempt to use this shard if we cannot
-            // meet the quorum otherwise
-            shard = s.removeSignature(signedShard)
+          console.log(typeof self.ephemeralKeys.isBoxedMessage)
+          if (self.ephemeralKeys.isBoxedMessage(rawShard)) {
+            console.log('Found box!')
+            const dbKey = { root, recipient: msg.author }
+            self.ephemeralKeys.unBoxMessage(dbKey, rawShard, Buffer.from(JSON.stringify({})), (err, shard) => {
+              if (err) return cb(err)
+              processShard(shard)
+            })
+          } else {
+            processShard(rawShard)
           }
 
-          // TODO removeSignature
-          return shard
+          function processShard (signedShard) {
+            const isReplyMsg = schemas.isReply(msg)
+            let shard
+            if (!isReplyMsg && !secretOwnerId) {
+              // we cannot verify because we do not know who it is from
+              shard = false
+            } else {
+              const secretOwnersKey = isReplyMsg
+                ? self.keypair.publicKey
+                : Buffer.from(secretOwnerId, 'hex')
+
+              shard = s.openShard(signedShard, secretOwnersKey)
+            }
+
+            if (!shard) {
+              log(`Warning: Shard from ${msg.author} could not be verified`)
+              // TODO we should only attempt to use this shard if we cannot
+              // meet the quorum otherwise
+              shard = s.removeSignature(signedShard)
+            }
+
+            cb(null, shard)
+          }
         }),
         pull.filter(Boolean),
         pull.collect((err, shards) => {
@@ -131,17 +155,18 @@ class Member {
     }
   }
 
-  request (root, singleRecipient, callback) {
-    if (typeof singleRecipient === 'function' && !callback) {
-      callback = singleRecipient
-      singleRecipient = null
+  request (root, options = {}, callback) {
+    if (typeof options === 'function' && !callback) {
+      callback = options
+      options = {}
     }
     const self = this
     return callback
-      ? requestCB(root, singleRecipient, callback)
-      : util.promisify(requestCB)(root, singleRecipient)
+      ? requestCB(root, options, callback)
+      : util.promisify(requestCB)(root, options)
 
-    function requestCB (root, singleRecipient, callback) {
+    function requestCB (root, options, callback) {
+      const singleRecipient = options.singleRecipient
       // if a recipeint is given, only publish a request to that recipient.
       // otherwise, publish requests to all recipients
       // find all own shards for this rootId
@@ -150,14 +175,27 @@ class Member {
         pull.filter(s => s.root === root),
         pull.map(s => s.recipient),
         pull.filter(r => singleRecipient ? r === singleRecipient : true),
-        // pull.asyncMap()
-        pull.map((recipient) => {
+        pull.asyncMap((recipient, cb) => {
           const reqMessage = self._buildMessage('request', {
             recipient,
             root
           })
-          if (!schemas.isRequest(reqMessage)) return callback(new Error('Request message badly formed'))
-          return self.encodeAndBox(reqMessage, Buffer.from(recipient, 'hex'))
+
+          if (self.options.ephemeral) {
+            const dbKey = { root, recipient }
+            self.ephemeralKeys.generateAndStore(dbKey, (err, publicKey) => {
+              if (err) return cb(err)
+              reqMessage['ephemeral-key'] = publicKey.toString('hex')
+              finishRequest()
+            })
+          } else {
+            finishRequest()
+          }
+
+          function finishRequest () {
+            if (!schemas.isRequest(reqMessage)) return cb(new Error('Request message badly formed'))
+            cb(null, self.encodeAndBox(reqMessage, Buffer.from(recipient, 'hex')))
+          }
         }),
         pull.collect((err, messagesToPublish) => {
           if (err) return callback(err)
@@ -197,13 +235,15 @@ class Member {
         pull.asyncMap((request, cb) => {
           self.getShard(request.root, (err, shard) => {
             if (err) return callback(err)
-            // TODO ephemeral key in request?
-            // shardToPubish = request.ephemeralKey ? encrypt : shard
+            // ephemeral key in request?
+            const shardToPublish = request['ephemeral-key']
+              ? self.ephemeralKeys.boxMessage(shard, Buffer.from(request['ephemeral-key'], 'hex'), Buffer.from(JSON.stringify({})))
+              : shard
             const reply = self._buildMessage('reply', {
               recipient: request.author,
               branch: self.messageToId(request),
               root: request.root,
-              shard: shard.toString('hex')
+              shard: shardToPublish.toString('hex')
             })
             if (!schemas.isReply(reply)) return callback(new Error('Reply message badly formed'))
             cb(null, self.encodeAndBox(reply, Buffer.from(request.author, 'hex')))
