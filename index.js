@@ -101,9 +101,7 @@ class Member {
 
           // TODO check if shard is ephemeral encrypted
           // if it is, find the key for that shard and decrypt
-          console.log(typeof self.ephemeralKeys.isBoxedMessage)
           if (self.ephemeralKeys.isBoxedMessage(rawShard)) {
-            console.log('Found box!')
             const dbKey = { root, recipient: msg.author }
             self.ephemeralKeys.unBoxMessage(dbKey, rawShard, Buffer.from(JSON.stringify({})), (err, shard) => {
               if (err) return cb(err)
