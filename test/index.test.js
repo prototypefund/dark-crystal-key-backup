@@ -2,6 +2,7 @@ const { describe } = require('tape-plus')
 const keyBackup = require('..')
 const s = require('key-backup-crypto')
 const pull = require('pull-stream')
+const tmpDir = require('tmp').dirSync
 
 describe('share', (context) => {
   let messages
@@ -62,7 +63,56 @@ describe('share', (context) => {
     }
     secretOwner.share(sObj).then((root) => {
       assert.ok(root, 'Gives root ID')
-      secretOwner.request(root, null, (err, numRequests) => {
+      secretOwner.request(root, (err, numRequests) => {
+        assert.error(err, 'No error on request')
+        assert.equal(numRequests, 5, 'Expected number of requests published')
+        makeReplies(root)
+      })
+    }).catch((err) => {
+      assert.error(err, 'No error on share')
+      next()
+    })
+
+    function makeReplies (root) {
+      pull(
+        pull.values(custodians),
+        pull.asyncMap((custodian, cb) => {
+          custodian.reply((err, numReplies) => {
+            assert.error(err, 'No error on reply')
+            assert.equal(numReplies, 1, 'Single reply published')
+            cb(null, numReplies)
+          })
+        }),
+        pull.collect((err) => {
+          assert.error(err, 'No error')
+          secretOwner.combine(root, (err, secretObj) => {
+            assert.error(err, 'No error on combine')
+            assert.equal(secretObj.label, sObj.label, 'Label correctly retrieved')
+            assert.equal(secretObj.secret.toString('hex'), sObj.secret.toString('hex'), 'Successfully recovered secret')
+            next()
+          })
+        })
+      )
+    }
+  })
+
+  context('with ephemeral keys', (assert, next) => {
+    const custodians = []
+    const numMembers = 5
+    for (let i = 0; i < numMembers; i++) {
+      custodians.push(keyBackup({ publish, query }))
+    }
+    const secretOwner = keyBackup({ publish, query, ephemeral: true, storage: tmpDir().name })
+    const sObj = {
+      secret: s.randomBytes(32),
+      label: 'My private key',
+      shards: 5,
+      quorum: 3,
+      custodians: custodians.map(c => c.keypair.publicKey)
+    }
+    secretOwner.share(sObj).then((root) => {
+      assert.ok(root, 'Gives root ID')
+      secretOwner.request(root, (err, numRequests) => {
         assert.error(err, 'No error on request')
         assert.equal(numRequests, 5, 'Expected number of requests published')
         makeReplies(root)
