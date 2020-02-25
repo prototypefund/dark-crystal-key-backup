@@ -144,3 +144,15 @@ const = member.decodeAndUnbox(message)
 ```
 
 Decrypt and decode the given message. `message` should be a buffer. If decryption was not successful, attempts to decode the message as it was given. The included JSON encoder will return `false` if decoding was unsuccessful.  Otherwise, returns an object.
+
+### `member.deleteEphemeralKeypair`
+
+```js
+const promise = member.deleteEphemeralKeypair(root, recipient)
+```
+OR
+```js
+member.deleteEphemeralKeypair(root, recipient, callback)
+```
+
+If `options.ephemeralKeys` is set, this can be used to delete an ephemeral keypair associated with the given root message reference and recipient, once the shard data is no longer needed.
