@@ -363,6 +363,18 @@ class Member {
     return message.author === this.id
   }
 
+  deleteEphemeralKeypair (root, recipient, callback) {
+    const self = this
+    return callback
+      ? deleteEphemeralKeypairCB(root, recipient, callback)
+      : util.promisify(deleteEphemeralKeypairCB)(root, recipient)
+
+    function deleteEphemeralKeypairCB (root, recipient, cb) {
+      if (!self.options.ephemeral) return cb(new Error('options.ephemeral must be set in order to delete keys'))
+      self.ephemeralKeys.deleteKeypairs({ root, recipient }, cb)
+    }
+  }
+
   // Currently unused
   queryOwnSecrets () {
     return pull(
