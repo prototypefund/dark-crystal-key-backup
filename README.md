@@ -16,9 +16,14 @@ The constructor takes an `options` object which may have properties:
 - `keypair` - a keypair object of the form `{ publicKey, secretKey }`, both of which should be buffers. This is optional, if no keypair is passed, one will be generated.
 - `publish` - a function which will used to publish messages.  It should take a single argument, `message` and return a promise.
 - `publishCB` - If you prefer to use callbacks, you can instead give a function `publishCB` which takes two arguments, `message` and `callback`. 
-- `query` - query function (TODO).
+- `streamAllMessages` - A function which returns a stream of all messages we know of.
+- `pullStreamAllMessages` - A function which returns a pull-stream of all messages we know of.
 - `encoder` - an optional message encoder.  If it is not given a JSON encoder will be used. If given, it should be an object of the form `{ encode, decode }`.  `encode` should take an object and return a buffer, `decode` should do the opposite.
 - `messageToId` an optional function which given a message, returns its reference.  For example, takes a `root` message, and gives a reference which we can later use to refer to that root message. Defaults to encoding the message with the given encoder, taking its hash, and giving it as a hex encoded string. If given, should take an object and return a string.
+- `ephemeral` - Boolean - whether to use ephemeral keys in requests for returned shards.  If false, ephemeral keys will still be used if given by the other party, but we will not use them in our own requests.
+- `storage` - If `ephemeral` is true, the filesystem path to use to store keys on disk. Defaults to `~/.key-backup`.
+
+Note - you **must** provide a publish function, and a way of reading messages (either `streamAllMessages` or `pullStreamAllMessages`)
 
 ## `member.share`
 
