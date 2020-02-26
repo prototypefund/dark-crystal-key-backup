@@ -15,7 +15,7 @@ describe('share', (context) => {
     // })
   }
 
-  function query () {
+  function pullStreamAllMessages () {
     return pull(pull.values(messages))
   }
 
@@ -36,7 +36,7 @@ describe('share', (context) => {
       quorum: 3,
       custodians: custodians.map(c => c.publicKey)
     }
-    const member = keyBackup({ publish, query })
+    const member = keyBackup({ publish, pullStreamAllMessages })
     assert.ok(member.keypair, 'has keypair')
     member.share(sObj).then((root) => {
       assert.ok(root, 'gives a root id')
@@ -51,9 +51,9 @@ describe('share', (context) => {
     const custodians = []
     const numMembers = 5
     for (let i = 0; i < numMembers; i++) {
-      custodians.push(keyBackup({ publish, query }))
+      custodians.push(keyBackup({ publish, pullStreamAllMessages }))
     }
-    const secretOwner = keyBackup({ publish, query })
+    const secretOwner = keyBackup({ publish, pullStreamAllMessages })
     const sObj = {
       secret: s.randomBytes(32),
       label: 'My private key',
@@ -100,9 +100,9 @@ describe('share', (context) => {
     const custodians = []
     const numMembers = 5
     for (let i = 0; i < numMembers; i++) {
-      custodians.push(keyBackup({ publish, query }))
+      custodians.push(keyBackup({ publish, pullStreamAllMessages }))
     }
-    const secretOwner = keyBackup({ publish, query, ephemeral: true, storage: tmpDir().name })
+    const secretOwner = keyBackup({ publish, pullStreamAllMessages, ephemeral: true, storage: tmpDir().name })
     const sObj = {
       secret: s.randomBytes(32),
       label: 'My private key',
@@ -149,10 +149,10 @@ describe('share', (context) => {
     const custodians = []
     const numMembers = 5
     for (let i = 0; i < numMembers; i++) {
-      custodians.push(keyBackup({ publish, query }))
+      custodians.push(keyBackup({ publish, pullStreamAllMessages }))
     }
-    const secretOwner = keyBackup({ publish, query })
-    const newSecretOwner = keyBackup({ publish, query })
+    const secretOwner = keyBackup({ publish, pullStreamAllMessages })
+    const newSecretOwner = keyBackup({ publish, pullStreamAllMessages })
     const sObj = {
       secret: s.randomBytes(32),
       label: 'My private key',
@@ -196,10 +196,10 @@ describe('share', (context) => {
     const custodians = []
     const numMembers = 5
     for (let i = 0; i < numMembers; i++) {
-      custodians.push(keyBackup({ publish, query }))
+      custodians.push(keyBackup({ publish, pullStreamAllMessages }))
     }
-    const secretOwner = keyBackup({ publish, query })
-    const newSecretOwner = keyBackup({ publish, query })
+    const secretOwner = keyBackup({ publish, pullStreamAllMessages })
+    const newSecretOwner = keyBackup({ publish, pullStreamAllMessages })
     const sObj = {
       secret: s.randomBytes(32),
       label: 'My private key',
