@@ -41,6 +41,7 @@
     "key-backup-message-schemas": "git+https://gitlab.com/dark-crystal/key-backup-message-schemas.git",
     "pull-stream": "^3.6.14",
     "secret-sharing": "git+https://gitlab.com/dark-crystal/secret-sharing.git",
+    "stream-to-pull-stream": "^1.7.3",
     "tmp": "^0.1.0"
   }
 }
