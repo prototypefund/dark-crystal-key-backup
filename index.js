@@ -1,5 +1,5 @@
 const secrets = require('secret-sharing')
-const s = require('key-backup-crypto')
+const crypto = require('key-backup-crypto')
 const log = require('debug')('key-backup')
 const pull = require('pull-stream')
 const schemas = require('key-backup-message-schemas')
@@ -9,6 +9,7 @@ const maybe = require('call-me-maybe')
 const homeDir = require('os').homedir()
 const path = require('path')
 const EphemeralKeys = require('ephemeral-keys')
+const toPull = require('stream-to-pull-stream')
 
 const version = '1.0.0'
 
@@ -16,13 +17,16 @@ module.exports = (options) => new Member(options)
 
 class Member {
   constructor (options = {}) {
-    this.keypair = options.keypair || s.keypair()
+    this.keypair = options.keypair || crypto.keypair()
     this.id = this.keypair.publicKey.toString('hex')
     this.publish = options.publish // ||
     this.publishCB = options.publishCB
-    this.query = options.query // ||
+    assert(options.publish || options.publishCB,
+      'Must provide a way of publishing messages.  options.publish or options.publishCB')
     this.encoder = options.encoder || jsonEncoder
     this.messageToId = options.messageToId || this._defaultMessageToId
+    assert(options.streamAllMessages || options.pullStreamAllMessages,
+      'Must provide a way of reading messages.  options.streamAllMessages or options.pullStreamAllMessages')
     this.options = options
 
     const ephemeralKeysOpts = {}
@@ -40,13 +44,13 @@ class Member {
     async function sharePromise (options) {
       const { secret, label, shards, quorum, custodians, name } = options
 
-      const packedSecret = s.packLabel(secret, label)
+      const packedSecret = crypto.packLabel(secret, label)
 
       const rawShards = await secrets.share(packedSecret, shards, quorum)
-      const signedShards = s.signShards(rawShards, self.keypair)
+      const signedShards = crypto.signShards(rawShards, self.keypair)
 
       const boxedShards = signedShards.map((shard, i) => {
-        return s.oneWayBox(shard, custodians[i])
+        return crypto.oneWayBox(shard, custodians[i])
       })
 
       const rootMessage = self._buildMessage('root', { label, shards, quorum, tool: 'sss' })
@@ -122,14 +126,14 @@ class Member {
                 ? self.keypair.publicKey
                 : Buffer.from(secretOwnerId, 'hex')
 
-              shard = s.openShard(signedShard, secretOwnersKey)
+              shard = crypto.openShard(signedShard, secretOwnersKey)
             }
 
             if (!shard) {
               log(`Warning: Shard from ${msg.author} could not be verified`)
               // TODO we should only attempt to use this shard if we cannot
               // meet the quorum otherwise
-              shard = s.removeSignature(signedShard)
+              shard = crypto.removeSignature(signedShard)
             }
 
             cb(null, shard)
@@ -142,7 +146,7 @@ class Member {
           secrets.combine(shards).then((packedSecret) => {
             let secretObject
             try {
-              secretObject = s.unpackLabel(packedSecret)
+              secretObject = crypto.unpackLabel(packedSecret)
             } catch (err) {
               return callback(err)
             }
@@ -288,7 +292,7 @@ class Member {
         self.messagesByType('shard'),
         pull.filter(schemas.isShard),
         pull.filter(s => s.root === root),
-        pull.map(shardMsg => s.oneWayUnbox(Buffer.from(shardMsg.shard, 'hex'), self.keypair.secretKey)),
+        pull.map(shardMsg => crypto.oneWayUnbox(Buffer.from(shardMsg.shard, 'hex'), self.keypair.secretKey)),
         pull.collect((err, shards) => {
           if (err) return cb(err)
           if (!shards[0]) return cb(new Error('Shard not found, or decryption error'))
@@ -304,8 +308,11 @@ class Member {
     if (typeof types === 'string') types = [types]
     const fullTypes = types.map(type => `dark-crystal/${type}`)
 
+    const source = this.options.pullStreamAllMessages() ||
+      toPull.source(this.options.streamAllMessages())
+
     return pull(
-      this.query(),
+      source,
       pull.map((message) => {
         return self.decodeAndUnbox(message)
       }),
@@ -349,12 +356,12 @@ class Member {
   }
 
   encodeAndBox (message, recipient) {
-    return s.privateBox(this.encoder.encode(message), [recipient, this.keypair.publicKey])
+    return crypto.privateBox(this.encoder.encode(message), [recipient, this.keypair.publicKey])
   }
 
   decodeAndUnbox (message) {
     assert(Buffer.isBuffer(message), 'message must be a buffer')
-    const plainText = s.privateUnbox(message, this.keypair.secretKey)
+    const plainText = crypto.privateUnbox(message, this.keypair.secretKey)
     return this.encoder.decode(plainText || message)
   }
 
@@ -405,7 +412,7 @@ class Member {
   // }
 
   _defaultMessageToId (message) {
-    return s.genericHash(this.encoder.encode(message)).toString('hex')
+    return crypto.genericHash(this.encoder.encode(message)).toString('hex')
   }
 }
 
